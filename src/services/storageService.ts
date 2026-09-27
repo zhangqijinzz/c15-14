@@ -26,7 +26,10 @@ function isDocument(value: unknown): value is EnergyDocument {
     && Array.isArray(candidate.scenarios)
     && candidate.scenarios.length > 0
     && candidate.scenarios.every(isScenario)
-    && candidate.scenarios.some((scenario) => scenario.id === candidate.activeScenarioId);
+    && candidate.scenarios.some((scenario) => scenario.id === candidate.activeScenarioId)
+    && (candidate.comparisonScenarioId === undefined
+      || candidate.comparisonScenarioId === null
+      || typeof candidate.comparisonScenarioId === 'string');
 }
 
 function isScenario(value: unknown): value is EnergyDocument['scenarios'][number] {

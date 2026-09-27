@@ -62,3 +62,36 @@ export function formatNumber(value: number, digits = 2): string {
 export function cloneScenario(source: EnergyScenario, id: string, name: string): EnergyScenario {
   return { ...source, id, name, createdAt: new Date().toISOString(), devices: source.devices.map((device) => ({ ...device, id: `${id}-${device.id}` })) };
 }
+
+/** 方案月度总用电量（kWh），保证各处对比口径一致 */
+export function scenarioMonthlyKwh(scenario: EnergyScenario): number {
+  return scenario.devices.reduce(
+    (total, device) => total + (device.watts * device.dailyHours * scenario.daysPerMonth) / 1000,
+    0,
+  );
+}
+
+/**
+ * 稳定的默认对比方案：除 excludeId 外创建最早的方案。
+ * 只依赖 createdAt，不随列表顺序变化；没有可选方案时返回 null。
+ */
+export function pickDefaultComparisonId(scenarios: EnergyScenario[], excludeId: string): string | null {
+  return scenarios
+    .filter((scenario) => scenario.id !== excludeId)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))[0]?.id ?? null;
+}
+
+/**
+ * 解析真正用于对比的方案：
+ * 优先使用用户指定的方案；指定的方案已删除或就是当前方案时，回退到稳定默认选择。
+ * 始终不会返回空方案，也不会拿方案和自身比较。
+ */
+export function resolveComparisonId(
+  scenarios: EnergyScenario[],
+  activeId: string,
+  preferredId: string | null,
+): string | null {
+  const exists = (id: string | null): boolean =>
+    id !== null && id !== activeId && scenarios.some((scenario) => scenario.id === id);
+  return exists(preferredId) ? preferredId : pickDefaultComparisonId(scenarios, activeId);
+}

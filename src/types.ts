@@ -18,6 +18,8 @@ export interface EnergyDocument {
   version: 1;
   scenarios: EnergyScenario[];
   activeScenarioId: string;
+  /** 用户指定的对比方案；null 表示采用稳定默认选择，绝不指向已删除的方案 */
+  comparisonScenarioId: string | null;
 }
 
 export type ViewStatus = 'loading' | 'ready' | 'editing' | 'error' | 'completed';

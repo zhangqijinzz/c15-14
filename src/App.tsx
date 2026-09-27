@@ -1,17 +1,21 @@
 import { DeviceEditor } from './components/DeviceEditor';
 import { ScenarioCard } from './components/ScenarioCard';
-import { formatNumber } from './domain';
+import { formatNumber, pickDefaultComparisonId, scenarioMonthlyKwh } from './domain';
 import { useEnergyLens } from './hooks';
 
 function App() {
   const { vm, state } = useEnergyLens();
   const active = vm.activeScenario;
   const summary = vm.activeSummary;
+  const baseline = vm.comparisonScenario;
   if (state.status === 'loading' || !active || !summary) return <main className="loading-screen"><div className="pulse" /><p>正在恢复你的能耗方案…</p></main>;
   const maxKwh = Math.max(...summary.devices.map((device) => device.monthlyKwh), 1);
-  const baseline = state.document?.scenarios.find((item) => item.id !== active.id);
-  const comparisonValue = baseline && baseline.id !== active.id ? baseline.devices.reduce((total, device) => total + (device.watts * device.dailyHours * baseline.daysPerMonth) / 1000, 0) : null;
+  const scenarios = state.document?.scenarios ?? [];
+  const hasComparison = scenarios.length > 1 && baseline !== null && baseline.id !== active.id;
+  const comparisonValue = baseline ? scenarioMonthlyKwh(baseline) : null;
   const deltaKwh = comparisonValue === null ? null : summary.total.monthlyKwh - comparisonValue;
+  const autoBaselineId = scenarios.length > 1 ? pickDefaultComparisonId(scenarios, active.id) : null;
+  const autoBaselineName = autoBaselineId ? scenarios.find((item) => item.id === autoBaselineId)?.name : null;
 
   return <div className="app-shell">
     <header className="topbar">
@@ -48,7 +52,7 @@ function App() {
         <div className="analysis-grid"><div className="chart-card"><div className="card-heading"><div><h3>设备消耗占比</h3><p>按月度用电量排序</p></div><span className="legend"><i /> 月度 kWh</span></div><div className="bar-chart">{summary.devices.slice().sort((a, b) => b.monthlyKwh - a.monthlyKwh).map((device) => <div className="bar-row" key={device.id}><div className="bar-label"><span>{device.name}</span><b>{formatNumber(device.monthlyKwh)} kWh</b></div><div className="bar-track"><i style={{ width: `${(device.monthlyKwh / maxKwh) * 100}%` }} /><span>{Math.round(device.share * 100)}%</span></div></div>)}</div></div><div className="insight-card"><span className="insight-icon">◒</span><h3>你的最大用电来源</h3><strong>{summary.devices.slice().sort((a, b) => b.monthlyKwh - a.monthlyKwh)[0]?.name}</strong><p>占总用电的 <b>{Math.round((summary.devices.slice().sort((a, b) => b.monthlyKwh - a.monthlyKwh)[0]?.share ?? 0) * 100)}%</b>。每天减少 1 小时使用，预计每月可节省 <b>¥{formatNumber((summary.devices.slice().sort((a, b) => b.monthlyKwh - a.monthlyKwh)[0]?.watts ?? 0) / 1000 * active.pricePerKwh * 30)}</b>。</p></div></div>
       </section>
 
-      <section className="scenario-section"><div className="section-title"><div><span className="step">04</span><h2>方案对比</h2><p>复制当前方案，试试另一种生活方式</p></div><button className="secondary-button" onClick={() => vm.duplicateActive()}>＋ 复制当前方案</button></div><div className="scenario-grid">{state.document?.scenarios.map((scenario) => <ScenarioCard key={scenario.id} scenario={scenario} totalKwh={scenario.id === active.id ? summary.total.monthlyKwh : scenario.devices.reduce((sum, device) => sum + (device.watts * device.dailyHours * scenario.daysPerMonth) / 1000, 0)} active={scenario.id === active.id} onSelect={() => vm.selectScenario(scenario.id)} />)}</div>{baseline && deltaKwh !== null && <div className="comparison-note"><span>↕</span><p>当前方案相较于“{baseline.name}”每月 <b>{deltaKwh <= 0 ? '少' : '多'} {formatNumber(Math.abs(deltaKwh))} kWh</b>，电费约 <b>¥{formatNumber(Math.abs(deltaKwh) * active.pricePerKwh)}</b>。</p></div>}</section>
+      <section className="scenario-section"><div className="section-title"><div><span className="step">04</span><h2>方案对比</h2><p>复制当前方案，试试另一种生活方式</p></div><button className="secondary-button" onClick={() => vm.duplicateActive()}>＋ 复制当前方案</button></div><div className="scenario-grid">{scenarios.map((scenario) => <ScenarioCard key={scenario.id} scenario={scenario} totalKwh={scenario.id === active.id ? summary.total.monthlyKwh : scenarioMonthlyKwh(scenario)} active={scenario.id === active.id} isBaseline={hasComparison && baseline?.id === scenario.id} canRemove={scenarios.length > 1} onSelect={() => vm.selectScenario(scenario.id)} onRemove={() => vm.removeScenario(scenario.id)} />)}</div>{scenarios.length > 1 && <div className="comparison-picker"><label htmlFor="baseline-select">对比基准</label><select id="baseline-select" value={vm.isComparisonExplicit ? baseline?.id ?? '__auto__' : '__auto__'} onChange={(event) => vm.setComparisonScenario(event.target.value === '__auto__' ? null : event.target.value)}><option value="__auto__">自动选择{autoBaselineName ? `（最早创建：${autoBaselineName}）` : ''}</option>{scenarios.filter((scenario) => scenario.id !== active.id).map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.name}</option>)}</select><span className="comparison-picker-hint">结论始终以“当前方案”与这里选定的方案比较</span></div>}{hasComparison && deltaKwh !== null && <div className="comparison-note"><span>↕</span><p>当前方案“{active.name}”相较于对比基准“{baseline.name}”每月 <b>{deltaKwh <= 0 ? '少' : '多'} {formatNumber(Math.abs(deltaKwh))} kWh</b>，电费约 <b>{deltaKwh <= 0 ? '少' : '多'} ¥{formatNumber(Math.abs(deltaKwh) * active.pricePerKwh)}</b>。</p></div>}</section>
     </main>
     <footer><span>EnergyLens · 用数据做出更好的能源选择</span><span>本地保存 · 数据只属于你</span></footer>
   </div>;

@@ -1,4 +1,4 @@
-import { cloneScenario, summarizeScenario, validateDevice, validateScenarioSettings } from './domain';
+import { cloneScenario, resolveComparisonId, summarizeScenario, validateDevice, validateScenarioSettings } from './domain';
 import { findScenario, type EnergyRepository } from './repository';
 import type { EnergyDevice, EnergyDocument, EnergyScenario, Notice, ViewStatus } from './types';
 
@@ -39,6 +39,23 @@ export class EnergyLensViewModel {
 
   get activeSummary() {
     return this.activeScenario ? summarizeScenario(this.activeScenario) : null;
+  }
+
+  /** 用户是否显式指定了对比方案（false 时界面显示稳定默认选择） */
+  get isComparisonExplicit(): boolean {
+    return this.state.document?.comparisonScenarioId !== null
+      && this.state.document?.comparisonScenarioId !== undefined;
+  }
+
+  /** 当前生效的对比方案：用户指定优先，否则回退到稳定默认；任何情况下都不为空方案 */
+  get comparisonScenario(): EnergyScenario | null {
+    if (!this.state.document) return null;
+    const comparisonId = resolveComparisonId(
+      this.state.document.scenarios,
+      this.state.document.activeScenarioId,
+      this.state.document.comparisonScenarioId,
+    );
+    return findScenario(this.state.document, comparisonId) ?? null;
   }
 
   updateDevice(deviceId: string, patch: Partial<Pick<EnergyDevice, 'name' | 'watts' | 'dailyHours'>>): void {
@@ -88,13 +105,57 @@ export class EnergyLensViewModel {
     if (!source || !this.state.document) return;
     const id = `scenario-${Date.now()}`;
     const copy = cloneScenario(source, id, `${source.name} · 副本`);
-    const document = { ...this.state.document, scenarios: [...this.state.document.scenarios, copy], activeScenarioId: id };
-    this.persist(document, '方案已复制，现在可以修改副本');
+    // 复制后立刻以“原方案”为对比对象，结论指向用户真正想比的方案，而不是列表里的其他方案
+    const document = {
+      ...this.state.document,
+      scenarios: [...this.state.document.scenarios, copy],
+      activeScenarioId: id,
+      comparisonScenarioId: source.id,
+    };
+    this.persist(document, '方案已复制，已自动与原方案对比');
   }
 
   selectScenario(id: string): void {
     if (!this.state.document || !findScenario(this.state.document, id)) return;
-    this.persist({ ...this.state.document, activeScenarioId: id }, '已切换方案');
+    // 切到的新方案若正是被指定的对比对象，则把对比对象换成原当前方案，保持对比对可用
+    const comparisonScenarioId = this.state.document.comparisonScenarioId === id
+      ? this.state.document.activeScenarioId
+      : this.state.document.comparisonScenarioId;
+    this.persist(
+      { ...this.state.document, activeScenarioId: id, comparisonScenarioId },
+      '已切换方案',
+    );
+  }
+
+  /** 用户显式指定对比方案；传 null 回到稳定默认选择 */
+  setComparisonScenario(id: string | null): void {
+    if (!this.state.document) return;
+    if (id !== null && (id === this.state.document.activeScenarioId || !findScenario(this.state.document, id))) return;
+    this.persist(
+      { ...this.state.document, comparisonScenarioId: id },
+      id === null ? '已恢复为自动选择对比方案' : '对比方案已指定',
+    );
+  }
+
+  /** 删除方案，并保证对比结论不会指向已删除的空方案 */
+  removeScenario(id: string): void {
+    if (!this.state.document) return;
+    if (this.state.document.scenarios.length <= 1) {
+      this.setNotice({ kind: 'info', text: '至少保留一个方案，无法删除' });
+      return;
+    }
+    const scenarios = this.state.document.scenarios.filter((scenario) => scenario.id !== id);
+    const activeScenarioId = this.state.document.activeScenarioId === id
+      ? scenarios[0].id
+      : this.state.document.activeScenarioId;
+    // 被删的是对比对象时清空显式选择，由稳定默认接手，绝不留下悬空引用
+    const comparisonScenarioId = this.state.document.comparisonScenarioId === id
+      ? null
+      : this.state.document.comparisonScenarioId;
+    this.persist(
+      { ...this.state.document, scenarios, activeScenarioId, comparisonScenarioId },
+      '方案已删除',
+    );
   }
 
   complete(): void {
