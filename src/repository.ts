@@ -11,10 +11,13 @@ export class LocalEnergyRepository implements EnergyRepository {
   load(): EnergyDocument {
     const saved = readDocument();
     if (!saved || saved.scenarios.length === 0) {
-      return { version: 1, scenarios: [exampleScenario], activeScenarioId: exampleScenario.id };
+      return { version: 1, scenarios: [exampleScenario], activeScenarioId: exampleScenario.id, baselineScenarioId: null };
     }
     const activeExists = saved.scenarios.some((scenario) => scenario.id === saved.activeScenarioId);
-    return activeExists ? saved : { ...saved, activeScenarioId: saved.scenarios[0].id };
+    const activeScenarioId = activeExists ? saved.activeScenarioId : saved.scenarios[0].id;
+    // 旧数据没有基准字段，或基准已失效（被删、指向当前方案）时，一律回到自动选择
+    const baselineExists = saved.scenarios.some((scenario) => scenario.id === saved.baselineScenarioId && scenario.id !== activeScenarioId);
+    return { ...saved, activeScenarioId, baselineScenarioId: baselineExists ? saved.baselineScenarioId : null };
   }
 
   save(document: EnergyDocument): void {

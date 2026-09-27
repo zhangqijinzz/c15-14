@@ -23,6 +23,7 @@ function isDocument(value: unknown): value is EnergyDocument {
   const candidate = value as Partial<EnergyDocument>;
   return candidate.version === 1
     && typeof candidate.activeScenarioId === 'string'
+    && (candidate.baselineScenarioId === undefined || candidate.baselineScenarioId === null || typeof candidate.baselineScenarioId === 'string')
     && Array.isArray(candidate.scenarios)
     && candidate.scenarios.length > 0
     && candidate.scenarios.every(isScenario)

@@ -1,4 +1,4 @@
-import type { EnergyDevice, EnergyEstimate, EnergyScenario, ScenarioSummary } from './types';
+import type { EnergyDevice, EnergyDocument, EnergyEstimate, EnergyScenario, ScenarioSummary } from './types';
 
 export const MAX_DAILY_HOURS = 24;
 
@@ -61,4 +61,22 @@ export function formatNumber(value: number, digits = 2): string {
 
 export function cloneScenario(source: EnergyScenario, id: string, name: string): EnergyScenario {
   return { ...source, id, name, createdAt: new Date().toISOString(), devices: source.devices.map((device) => ({ ...device, id: `${id}-${device.id}` })) };
+}
+
+/** 按创建时间（并列时按 id）给出与列表顺序无关的稳定排序 */
+export function sortByStableOrder(scenarios: EnergyScenario[]): EnergyScenario[] {
+  return scenarios.slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+}
+
+/**
+ * 解析对比基准方案：
+ * 1. 用户指定过的方案（仍存在且不是当前方案）优先；
+ * 2. 否则回退到稳定默认——最早创建的非当前方案，不随列表顺序变化；
+ * 3. 只剩一个方案时返回 null，此时不应出现任何对比结论。
+ */
+export function resolveBaselineScenario(document: EnergyDocument): EnergyScenario | null {
+  const candidates = document.scenarios.filter((scenario) => scenario.id !== document.activeScenarioId);
+  if (candidates.length === 0) return null;
+  const pinned = candidates.find((scenario) => scenario.id === document.baselineScenarioId);
+  return pinned ?? sortByStableOrder(candidates)[0];
 }
